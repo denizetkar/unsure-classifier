@@ -5,24 +5,48 @@ import utils
 
 
 def train_mode(args):
+    """Main execution function for when "train" subcommand is used.
+
+    Args:
+      args: A Namespace object containing command line arguments.
+    """
     utils.assert_file_path(args.dataset_path)
     if args.model_path:
         utils.assert_newfile_path(args.model_path)
-    lower_bound = model.train(args.dataset_path, args.model_path, k_fold=args.k_fold)
+    classifier = model.UnsureClassifier(
+        dataset_path=args.dataset_path, model_path=args.model_path
+    )
+    lower_bound = classifier.train(k_fold=args.k_fold)
     print(lower_bound)
 
 
 def eval_mode(args):
+    """Main execution function for when "eval" subcommand is used.
+
+    Args:
+      args: A Namespace object containing command line arguments.
+    """
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
-    eval_score = model.evaluate(args.dataset_path, args.model_path)
+    classifier = model.UnsureClassifier(
+        dataset_path=args.dataset_path, model_path=args.model_path
+    )
+    eval_score = classifier.evaluate()
     print(eval_score)
 
 
 def pred_mode(args):
+    """Main execution function for when "pred" subcommand is used.
+
+    Args:
+      args: A Namespace object containing command line arguments.
+    """
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
-    pred = model.predict(args.dataset_path, args.model_path)
+    classifier = model.UnsureClassifier(
+        dataset_path=args.dataset_path, model_path=args.model_path
+    )
+    pred = classifier.predict()
     print(pred)
 
 
