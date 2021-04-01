@@ -1,5 +1,6 @@
 import argparse
 
+import model
 import utils
 
 
@@ -7,21 +8,21 @@ def train_mode(args):
     utils.assert_file_path(args.dataset_path)
     if args.model_path:
         utils.assert_newfile_path(args.model_path)
-    lower_bound = utils.train(args.dataset_path, args.model_path, k_fold=args.k_fold)
+    lower_bound = model.train(args.dataset_path, args.model_path, k_fold=args.k_fold)
     print(lower_bound)
 
 
 def eval_mode(args):
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
-    eval_score = utils.evaluate(args.dataset_path, args.model_path)
+    eval_score = model.evaluate(args.dataset_path, args.model_path)
     print(eval_score)
 
 
 def pred_mode(args):
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
-    pred = utils.predict(args.dataset_path, args.model_path)
+    pred = model.predict(args.dataset_path, args.model_path)
     print(pred)
 
 

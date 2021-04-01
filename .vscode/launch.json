@@ -16,8 +16,8 @@
                 "../datasets/trainingdata_a.xls",
                 // "--model-path",
                 // "./checkpoint/lgb_model_a.lgb",
-                "--k-fold",
-                "2",
+                // "--k-fold",
+                // "2",
             ],
             "justMyCode": false,
         }
