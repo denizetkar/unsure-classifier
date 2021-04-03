@@ -30,6 +30,27 @@ def assert_newfile_path(newfile_path: str):
     assert os.path.basename(newfile_path) != "", "new file path does not lead to a file"
 
 
+def get_excel_table(
+    dataset_path: str, col_labelled: bool = True, row_labelled: bool = True
+) -> np.ndarray:
+    """Assumes the dataset path points to an excel file and reads it as it is.
+
+    Args:
+      dataset_path: Path of the excel file dataset.
+      col_labelled: Boolean indicating if columns are labelled with a header.
+      row_labelled: Boolean indicating if rows are labelled with a column.
+
+    Returns:
+      A numpy array containing the table inside the dataset file.
+    """
+    dataset = pd.read_excel(
+        dataset_path,
+        header=0 if col_labelled else None,
+        index_col=0 if row_labelled else None,
+    )
+    return dataset.to_numpy()
+
+
 def get_dataset(
     dataset_path: str, col_labelled: bool = True, row_labelled: bool = True
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -43,12 +64,8 @@ def get_dataset(
     Returns:
       (X, y) numpy arrays where "X" excludes the last column and "y" is the last column.
     """
-    dataset = pd.read_excel(
-        dataset_path,
-        header=0 if col_labelled else None,
-        index_col=0 if row_labelled else None,
-    )
-    return dataset.iloc[:, :-1].to_numpy(), dataset.iloc[:, -1].to_numpy()
+    dataset = get_excel_table(dataset_path, col_labelled, row_labelled)
+    return dataset[:, :-1], dataset[:, -1]
 
 
 def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:

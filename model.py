@@ -249,5 +249,5 @@ class UnsureClassifier:
             with open(self.model_path, "rb") as f:
                 self.predictor, self.thresholds = pickle.load(f)
 
-        pred, unsure_cnt = self.predict_numpy(utils.get_dataset(self.dataset_path))
+        pred, unsure_cnt = self.predict_numpy(utils.get_excel_table(self.dataset_path))
         return pred.tolist(), unsure_cnt
