@@ -43,7 +43,6 @@ def get_dataset(
     Returns:
       (X, y) numpy arrays where "X" excludes the last column and "y" is the last column.
     """
-    assert_file_path(dataset_path)
     dataset = pd.read_excel(
         dataset_path,
         header=0 if col_labelled else None,
@@ -61,7 +60,6 @@ def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:
     Returns:
       A numpy array of shape (n, n) where "n" is the number of classes.
     """
-    assert_file_path(miscls_weight_path)
     miscls_weights: np.ndarray = pd.read_csv(miscls_weight_path, header=None).to_numpy()
     assert np.all(
         miscls_weights.diagonal() == 0

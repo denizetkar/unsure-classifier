@@ -11,8 +11,11 @@ def train_mode(args: argparse.Namespace):
       args: A Namespace object containing command line arguments.
     """
     utils.assert_file_path(args.dataset_path)
+    utils.assert_file_path(args.miscls_weight_path)
     if args.model_path:
         utils.assert_newfile_path(args.model_path)
+    if args.best_param_path:
+        utils.assert_newfile_path(args.best_param_path)
     classifier = model.UnsureClassifier(
         dataset_path=args.dataset_path,
         model_path=args.model_path,
