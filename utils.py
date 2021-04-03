@@ -71,6 +71,19 @@ def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:
 def get_miscls_cost(
     target: np.ndarray, pred: np.ndarray, miscls_weights: np.ndarray
 ) -> float:
+    """Calculates the misclassification cost given a vector of targets,
+    predictions and the misclassification weights matrix.
+
+    Args:
+      target: A numpy array of shape (n,) for target labels.
+      pred: A numpy array of shape (n,) for predicted labels. It contains
+        "-1" for unsure label.
+      miscls_weights: A numpy array of shape (c, c) where "c" is the
+        number of classes.
+
+    Returns:
+      A float containing the non-negative misclassification cost.
+    """
     class_cnt = miscls_weights.shape[0]
     sample_size = target.shape[0]
     target_one_hot: np.ndarray = np.zeros((sample_size, class_cnt))
@@ -93,6 +106,18 @@ def get_miscls_cost(
 def eval_scores(
     target: np.ndarray, pred: np.ndarray, unsure_cnt: int
 ) -> Tuple[float, float, float]:
+    """Calculates various evaluation scores from the target labels and
+    predicted labels. The last score is always sureness ratio.
+
+    Args:
+      target: A numpy array of shape (n,) for target labels.
+      pred: A numpy array of shape (n,) for predicted labels. It contains
+        "-1" for unsure label.
+      unsure_cnt: Number of unsure samples in the prediction.
+
+    Returns:
+      A tuple of floats each containing an evaluation score.
+    """
     conf_preds = pred != -1
     return (
         accuracy_score(target[conf_preds], pred[conf_preds]),

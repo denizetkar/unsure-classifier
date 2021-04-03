@@ -20,7 +20,6 @@ class UnsureClassifier:
     Attributes:
         params:
             LightGBM parameters for constructing and training the model.
-            dataset_path: Path of the dataset to be used.
         dataset_path:
             Path to the dataset for training, evaluation and prediction.
         model_path:
