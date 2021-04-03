@@ -4,7 +4,7 @@ import model
 import utils
 
 
-def train_mode(args):
+def train_mode(args: argparse.Namespace):
     """Main execution function for when "train" subcommand is used.
 
     Args:
@@ -14,13 +14,17 @@ def train_mode(args):
     if args.model_path:
         utils.assert_newfile_path(args.model_path)
     classifier = model.UnsureClassifier(
-        dataset_path=args.dataset_path, model_path=args.model_path
+        dataset_path=args.dataset_path,
+        model_path=args.model_path,
+        best_param_path=args.best_param_path,
+        miscls_weight_path=args.miscls_weight_path,
+        unsure_coef=args.unsure_coef,
     )
-    lower_bound = classifier.train(k_fold=args.k_fold)
-    print(lower_bound)
+    lower_bounds = classifier.train(k_fold=args.k_fold)
+    print(lower_bounds)
 
 
-def eval_mode(args):
+def eval_mode(args: argparse.Namespace):
     """Main execution function for when "eval" subcommand is used.
 
     Args:
@@ -31,11 +35,11 @@ def eval_mode(args):
     classifier = model.UnsureClassifier(
         dataset_path=args.dataset_path, model_path=args.model_path
     )
-    eval_score = classifier.evaluate()
-    print(eval_score)
+    eval_scores = classifier.evaluate()
+    print(eval_scores)
 
 
-def pred_mode(args):
+def pred_mode(args: argparse.Namespace):
     """Main execution function for when "pred" subcommand is used.
 
     Args:
@@ -46,8 +50,8 @@ def pred_mode(args):
     classifier = model.UnsureClassifier(
         dataset_path=args.dataset_path, model_path=args.model_path
     )
-    pred = classifier.predict()
-    print(pred)
+    pred, unsure_cnt = classifier.predict()
+    print((pred, unsure_cnt))
 
 
 parser = argparse.ArgumentParser()
@@ -57,7 +61,16 @@ train_parser.add_argument(
     "dataset_path",
     help="Path to the dataset for training",
 )
-train_parser.add_argument("--model-path", help="Path for saving the trained model")
+train_parser.add_argument(
+    "miscls_weight_path", help="Path for misclassification weights"
+)
+train_parser.add_argument("--model-path", help="Path for the trained model")
+train_parser.add_argument("--best-param-path", help="Path for the training parameters")
+train_parser.add_argument(
+    "--unsure-coef",
+    type=float,
+    help="Weighting coefficient for minimizing unsure classification",
+)
 train_parser.add_argument(
     "--k-fold",
     "-k",
