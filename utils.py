@@ -7,6 +7,8 @@ from scipy.stats import kurtosis
 from sklearn.metrics import confusion_matrix
 from statsmodels.stats.proportion import proportion_confint
 
+import unsure_sim
+
 np.seterr(divide="ignore", invalid="ignore")
 
 
@@ -54,8 +56,20 @@ def get_excel_table(
     return dataset.to_numpy()
 
 
+def calc_unsure_dataset(
+    dataset: np.ndarray, cls_coefs: np.ndarray, unsure_ratio: float
+) -> np.ndarray:
+    sim = unsure_sim.UnsureSimulator(dataset, cls_coefs, unsure_ratio)
+    return sim.simulate()
+
+
 def get_dataset(
-    dataset_path: str, col_labelled: bool = True, row_labelled: bool = True
+    dataset_path: str,
+    col_labelled: bool = True,
+    row_labelled: bool = True,
+    load_unsures: bool = False,
+    cls_coefs: np.ndarray = None,
+    unsure_ratio: float = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Assumes the dataset path points to an excel file and reads it.
 
@@ -63,63 +77,45 @@ def get_dataset(
       dataset_path: Path of the excel file dataset.
       col_labelled: Boolean indicating if columns are labelled with a header.
       row_labelled: Boolean indicating if rows are labelled with a column.
+      load_unsures: Boolean indicating if the unsure samples are to be also loaded.
+      cls_coefs: Class coefficients for when "load_unsures" is True.
+      unsure_ratio: Ratio of unsure to real samples for when "load_unsures" is True.
 
     Returns:
       (X, y) numpy arrays where "X" excludes the last column and "y" is the last column.
     """
     dataset = get_excel_table(dataset_path, col_labelled, row_labelled)
+    if not load_unsures:
+        return dataset[:, :-1], dataset[:, -1].astype(int)
+
+    unsures_path = os.path.join(
+        os.path.dirname(dataset_path),
+        "{}.unsure.csv".format(os.path.basename(dataset_path)),
+    )
+    if os.path.isfile(unsures_path):
+        unsure_dataset = pd.read_csv(unsures_path, header=None).to_numpy()
+    else:
+        unsure_dataset = calc_unsure_dataset(dataset, cls_coefs, unsure_ratio)
+        np.savetxt(unsures_path, unsure_dataset, delimiter=",")
+    class_cnt = cls_coefs.size
+    unsure_labels = np.full((unsure_dataset.shape[0], 1), class_cnt)
+    dataset = np.block([[dataset], [unsure_dataset, unsure_labels]])
+
     return dataset[:, :-1], dataset[:, -1].astype(int)
 
 
-def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:
+def get_cls_coefs(cls_coef_path: str) -> np.ndarray:
     """Assumes the path points to a .csv file and reads it.
 
     Args:
-      miscls_weight_path: Path of the misclassification weights.
+      cls_coef_path: Path of the class coefficients.
 
     Returns:
-      A numpy array of shape (n, n) where "n" is the number of classes.
+      A numpy array of shape (n,) where "n" is the number of classes.
     """
-    miscls_weights: np.ndarray = pd.read_csv(miscls_weight_path, header=None).to_numpy()
-    assert np.all(
-        miscls_weights.diagonal() == 0
-    ), "misclassification weight matrix must be diagonally 0"
-    assert np.all(miscls_weights >= 0), "misclassification matrix must be non-negative"
-    return miscls_weights
-
-
-def get_miscls_cost(
-    target: np.ndarray, pred: np.ndarray, miscls_weights: np.ndarray
-) -> float:
-    """Calculates the misclassification cost given a vector of targets,
-    predictions and the misclassification weights matrix.
-
-    Args:
-      target: A numpy array of shape (n,) for target labels.
-      pred: A numpy array of shape (n,) for predicted labels. It contains
-        "-1" for unsure label.
-      miscls_weights: A numpy array of shape (c, c) where "c" is the
-        number of classes.
-
-    Returns:
-      A float containing the non-negative misclassification cost.
-    """
-    class_cnt = miscls_weights.shape[0]
-    sample_size = target.shape[0]
-    target_one_hot: np.ndarray = np.zeros((sample_size, class_cnt))
-    np.put_along_axis(target_one_hot, target.reshape(-1, 1), 1, axis=1)
-    pred_one_hot: np.ndarray = np.zeros((sample_size, class_cnt))
-    np.put_along_axis(pred_one_hot, pred.reshape(-1, 1), 1, axis=1)
-    pred_one_hot[pred == -1] = 0
-
-    miscls_cost = np.matmul(
-        np.matmul(
-            pred_one_hot.reshape(sample_size, 1, class_cnt),
-            np.broadcast_to(miscls_weights, (sample_size, *miscls_weights.shape)),
-        ),
-        target_one_hot.reshape(sample_size, class_cnt, 1),
-    )
-    return np.sum(miscls_cost)
+    cls_coefs: np.ndarray = pd.read_csv(cls_coef_path, header=None).to_numpy()
+    assert np.all(cls_coefs > 0), "class coefficient vector must be positive"
+    return cls_coefs.flatten()
 
 
 def eval_score_counts(
@@ -145,7 +141,7 @@ def eval_score_counts(
       total number of samples. So, the corresponding evaluation score is
       's/n'.
     """
-    conf_preds = pred != -1
+    conf_preds = pred != class_cnt
     conf_matrix: np.ndarray = confusion_matrix(
         target[conf_preds], pred[conf_preds], labels=[i for i in range(class_cnt)]
     )

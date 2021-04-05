@@ -14,7 +14,7 @@
             "args": [
                 "train",
                 "../datasets/trainingdata_a.xls",
-                "./hyperparams/miscls_weights.csv",
+                "./hyperparams/cls_coefs.csv",
                 // "--model-path",
                 // "./checkpoint/lgb_model_a.lgb",
                 // "--k-fold",

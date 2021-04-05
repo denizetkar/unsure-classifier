@@ -11,7 +11,7 @@ def train_mode(args: argparse.Namespace):
       args: A Namespace object containing command line arguments.
     """
     utils.assert_file_path(args.dataset_path)
-    utils.assert_file_path(args.miscls_weight_path)
+    utils.assert_file_path(args.cls_coef_path)
     if args.model_path:
         utils.assert_newfile_path(args.model_path)
     if args.best_param_path:
@@ -20,8 +20,8 @@ def train_mode(args: argparse.Namespace):
         dataset_path=args.dataset_path,
         model_path=args.model_path,
         best_param_path=args.best_param_path,
-        miscls_weight_path=args.miscls_weight_path,
-        unsure_coef=args.unsure_coef,
+        cls_coef_path=args.cls_coef_path,
+        unsure_ratio=args.unsure_coef,
     )
     lower_bounds = classifier.train(k_fold=args.k_fold)
     print(lower_bounds)
@@ -71,7 +71,7 @@ train_parser.add_argument(
     help="Path to the dataset for training",
 )
 train_parser.add_argument(
-    "miscls_weight_path", help="Path for misclassification weights"
+    "cls_coef_path", help="Path for misclassification coefficients"
 )
 train_parser.add_argument("--model-path", help="Path for the trained model")
 train_parser.add_argument("--best-param-path", help="Path for the training parameters")
