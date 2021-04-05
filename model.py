@@ -55,6 +55,7 @@ class UnsureClassifier:
             unsure_ratio = 1 / self.class_cnt
         self.params = {
             "objective": "multiclass",
+            "metric": "multi_logloss",
             "num_class": self.class_cnt + 1,
             # "metric": "f1",
             "verbosity": -1,
