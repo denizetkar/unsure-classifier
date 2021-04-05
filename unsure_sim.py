@@ -1,62 +1,34 @@
-from typing import Tuple
-
 import numpy as np
 from SALib.sample import sobol_sequence
 from scipy.integrate import solve_ivp
 
 
-def normalize_dataset(
-    m: np.ndarray, mins: np.ndarray, maxs: np.ndarray, bounds: Tuple[float, float]
-) -> np.ndarray:
-    x = maxs - mins
-    y = bounds[1] - bounds[0]
-    m -= mins - bounds[0] * x / y
-    m *= y / x
-    return m
-
-
-def denormalize_dataset(
-    m: np.ndarray, mins: np.ndarray, maxs: np.ndarray, bounds: Tuple[float, float]
-) -> np.ndarray:
-    x = bounds[1] - bounds[0]
-    y = maxs - mins
-    m -= bounds[0] - mins * x / y
-    m *= y / x
-    return m
-
-
 class UnsureSimulator:
-    def __init__(
-        self,
-        dataset: np.ndarray,
-        cls_coefs: np.ndarray,
-        unsure_ratio: float,
-        bounds: Tuple[float, float] = (-10.0, 10.0),
-    ):
-        sure_particles: np.ndarray = dataset[:, :-1].copy()
+    EPS = 1e-5
+    I2P_COEF = 1e-1
+    WALL_COEF = 1e-4
+    FRIC_COEF = 0.5
+
+    def __init__(self, dataset: np.ndarray, cls_coefs: np.ndarray, unsure_ratio: float):
+        sure_particles: np.ndarray = dataset[:, :-1]
         self.a, self.d = sure_particles.shape
-        self.mins, self.maxs = (
-            np.expand_dims(np.min(sure_particles, axis=0), axis=0),
-            np.expand_dims(np.max(sure_particles, axis=0), axis=0),
-        )
-        self.bounds = bounds
-        sure_particles = normalize_dataset(sure_particles, self.mins, self.maxs, bounds)
         sure_vel: np.ndarray = np.zeros_like(sure_particles)
         sure_states: np.ndarray = np.stack([sure_particles, sure_vel], axis=1)
+
+        self.mins, self.maxs = (
+            np.min(sure_particles, axis=0),
+            np.max(sure_particles, axis=0),
+        )
         del sure_particles, sure_vel
 
-        unsure_particles: np.ndarray = normalize_dataset(
-            sobol_sequence.sample(int(self.a * unsure_ratio), self.d),
-            np.array(0.0),
-            np.array(1.0),
-            (
-                bounds[0] + (bounds[1] - bounds[0]) / 1000,
-                bounds[1] - (bounds[1] - bounds[0]) / 1000,
-            ),
+        unsure_particles: np.ndarray = (
+            sobol_sequence.sample(int(self.a * unsure_ratio), self.d)
+            * (self.maxs - self.mins)
+            + self.mins
         )
         self.b = unsure_particles.shape[0]
-        vel_mean = (bounds[1] - bounds[0]) / 4
-        vel_std = (bounds[1] - bounds[0]) / 16
+        vel_mean = (self.maxs - self.mins) / 4
+        vel_std = (self.maxs - self.mins) / 16
         unsure_vel: np.ndarray = (
             np.random.randn(*unsure_particles.shape) * vel_std + vel_mean
         ) * np.random.choice([-1, 1], size=(*unsure_particles.shape,))
@@ -70,64 +42,56 @@ class UnsureSimulator:
         del unsure_particles, unsure_vel
 
         self.state: np.ndarray = np.concatenate((sure_states, unsure_state), axis=0)
-        self.sample_coefs: np.ndarray = np.empty((1, self.a + self.b))
-        self.sample_coefs[0, : self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
-        self.sample_coefs[0, self.a :] = 1
-        self.sample_coefs_sum = np.sum(self.sample_coefs)
-        self.b_diag_indices = np.diag_indices(self.b, ndim=2)
-        self.empty_like_state = np.empty_like(self.state)
+        self.sample_coefs: np.ndarray = np.empty(self.a + self.b)
+        self.sample_coefs[: self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
+        self.sample_coefs[self.a :] = 1
 
-    def state_derivative(
-        self,
-        t: float,
-        y: np.ndarray,
-        EPS: float = 1e-7,
-        I2P_COEF: float = 1e0,
-        WALL_COEF: float = 1e-1,
-        FRIC_COEF: float = 1.0,
-    ) -> np.ndarray:
+    def state_derivative(self, t: float, y: np.ndarray) -> np.ndarray:
         state = y.reshape(self.a + self.b, 2, self.d)
-        prev_pos: np.ndarray = state[:, 0, :]
+        prev_pos: np.ndarray = state[:, 0, :].reshape(self.a + self.b, self.d)
 
-        # all_pos: (1, A+B, D)
-        all_pos = np.expand_dims(prev_pos, axis=0)
-        # unsure_pos: (B, 1, D)
-        unsure_pos = np.expand_dims(prev_pos[self.a :], axis=1)
-        # all_to_unsure: (B, A+B, D)
+        all_pos = np.broadcast_to(prev_pos, (self.b, self.a + self.b, self.d))
+        unsure_pos = np.broadcast_to(
+            prev_pos[self.a :].reshape(self.b, 1, self.d), (self.b, *prev_pos.shape)
+        )
         all_to_unsure = unsure_pos - all_pos
-        dist: np.ndarray = np.sqrt(np.sum(all_to_unsure ** 2, axis=2)) + EPS
+        # dist: (b, a+b)
+        dist: np.ndarray = np.linalg.norm(all_to_unsure, axis=2) + UnsureSimulator.EPS
         all_to_unsure /= np.expand_dims(dist, axis=2)
-        force_mag = (1 / dist ** 2) * self.sample_coefs * I2P_COEF
-        all_to_unsure *= np.expand_dims(force_mag, axis=2)
-        all_to_unsure /= self.sample_coefs_sum
-        all_to_unsure[:, self.a :][self.b_diag_indices] = 0
-        all_to_unsure = np.sum(all_to_unsure, axis=1)
+        force_mag = (1 / dist ** 2) * np.broadcast_to(
+            self.sample_coefs.reshape(1, -1), (self.b, self.a + self.b)
+        )
+        all_to_unsure *= (
+            np.broadcast_to(
+                np.expand_dims(force_mag, axis=2), (*force_mag.shape, self.d)
+            )
+            * np.broadcast_to(self.maxs - self.mins, (*force_mag.shape, self.d))
+            / np.sum(self.sample_coefs)
+        )
+        # all_to_unsure: (b, d)
+        all_to_unsure = np.nansum(all_to_unsure, axis=1)
 
-        unsure_pos = prev_pos[self.a :]
-        dist = unsure_pos - self.bounds[0]
+        unsure_pos = prev_pos[self.a :].clip(self.mins, self.maxs)
+        # dist: (b, d)
+        dist = unsure_pos - self.mins + UnsureSimulator.EPS
         wall_to_unsure = np.ones_like(dist)
-        up_force_mag = np.exp(-dist / WALL_COEF)
-        dist = self.bounds[1] - unsure_pos
-        down_force_mag = np.exp(-dist / WALL_COEF)
-        wall_to_unsure *= up_force_mag - down_force_mag
+        up_force_mag = (1 / dist ** 2) * UnsureSimulator.WALL_COEF
+        dist = self.maxs - unsure_pos + UnsureSimulator.EPS
+        down_force_mag = (1 / dist ** 2) * UnsureSimulator.WALL_COEF
+        wall_to_unsure *= (up_force_mag - down_force_mag) * np.broadcast_to(
+            self.maxs - self.mins, (self.b, self.d)
+        )
 
         unsure_vel = state[self.a :, 1, :]
-        friction = -FRIC_COEF * unsure_vel
+        friction = -UnsureSimulator.FRIC_COEF * unsure_vel
 
-        delta: np.ndarray = self.empty_like_state
+        delta: np.ndarray = np.empty_like(state)
         delta[:, 0, :] = state[:, 1, :]
         delta[: self.a, 1, :] = 0
         delta[self.a :, 1, :] = all_to_unsure + wall_to_unsure + friction
         return delta.reshape(-1)
 
     def simulate(self) -> np.ndarray:
-        sol = solve_ivp(
-            self.state_derivative, [0, 10], self.state.reshape(-1), method="RK23"
-        )
+        sol = solve_ivp(self.state_derivative, [0, 10], self.state.reshape(-1))
         last_state: np.ndarray = sol.y[:, -1].reshape(self.a + self.b, 2, self.d)
-        return denormalize_dataset(
-            last_state[self.a :, 0, :].reshape(self.b, self.d),
-            self.mins,
-            self.maxs,
-            self.bounds,
-        )
+        return last_state[self.a :, 0, :].reshape(self.b, self.d)

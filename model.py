@@ -1,10 +1,11 @@
 import os
 import pickle
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import lightgbm as lgb
 import numpy as np
 import optuna.integration.lightgbm as lgb_opt
+from scipy.stats import kurtosis
 from sklearn.metrics import fbeta_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
@@ -45,20 +46,15 @@ class UnsureClassifier:
         model_path: str = None,
         best_param_path: str = None,
         cls_coef_path: str = None,
-        class_cnt: int = None,
         unsure_ratio: float = None,
         model: lgb.Booster = None,
     ):
-        if cls_coef_path is not None:
-            self.cls_coefs = utils.get_cls_coefs(cls_coef_path)
-            self.class_cnt = self.cls_coefs.size
-        else:
-            self.class_cnt = class_cnt
+        self.cls_coefs = utils.get_cls_coefs(cls_coef_path)
+        self.class_cnt = self.cls_coefs.size
         if unsure_ratio is None:
             unsure_ratio = 1 / self.class_cnt
         self.params = {
             "objective": "multiclass",
-            "metric": "multi_logloss",
             "num_class": self.class_cnt + 1,
             # "metric": "f1",
             "verbosity": -1,
@@ -88,7 +84,7 @@ class UnsureClassifier:
         self, y_hat: Union[list, np.ndarray], data: lgb.Dataset
     ) -> Tuple[str, float, bool]:
         y_true = data.get_label()
-        y_hat = np.argmax(y_hat.reshape(self.class_cnt + 1, -1), axis=0)
+        y_hat = np.argmax(y_hat, axis=1)
         score = np.dot(
             [
                 fbeta_score(y_true, y_hat, labels=[i], beta=0.5, average="weighted")
@@ -158,7 +154,7 @@ class UnsureClassifier:
             test_y = target[test_idx]
             test_pred, unsure_cnt = self.predict_numpy(data[test_idx])
             cv_scores.append(
-                utils.eval_score_counts(test_y, test_pred, unsure_cnt, self.class_cnt)
+                utils.eval_scores(test_y, test_pred, unsure_cnt, self.class_cnt)
             )
 
         return cv_scores
@@ -184,11 +180,22 @@ class UnsureClassifier:
         best_params = self._get_best_params()
         best_params.update(self.params)
 
-        cv_score_counts = self._train_with_hyperparams(best_params, k_fold)
+        cv_scores = self._train_with_hyperparams(best_params, k_fold)
         if self.model_path:
             self.model.save_model(
                 self.model_path, num_iteration=self.model.best_iteration
             )
+
+        cv_scores = np.array(cv_scores)
+        mean = np.mean(cv_scores, axis=0)
+        ex_kur = kurtosis(cv_scores, bias=False, axis=0)
+        # https://www.wikiwand.com/en/Unbiased_estimation_of_standard_deviation#/Other_distributions
+        std = np.sqrt(
+            np.sum((cv_scores - mean) ** 2, axis=0)
+            / (len(cv_scores) - 1.5 - ex_kur / 4)
+        )
+        # https://www.wikiwand.com/en/Chebyshev%27s_inequality
+        return tuple(mean - 5 * std)
 
         cv_score_counts = np.stack(cv_score_counts, axis=0)
         return utils.get_lower_bounds_2(cv_score_counts)
@@ -200,13 +207,7 @@ class UnsureClassifier:
             self.model = lgb.Booster(model_file=self.model_path, silent=True)
 
         pred, unsure_cnt = self.predict_numpy(data)
-        score_counts = utils.eval_score_counts(
-            target,
-            pred,
-            unsure_cnt,
-            self.class_cnt,
-        )
-        return score_counts[:, 0] / score_counts[:, 1]
+        return utils.eval_scores(target, pred, unsure_cnt, self.class_cnt)
 
     def predict(
         self, dataset_path: str = None, model_path: str = None

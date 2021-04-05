@@ -21,7 +21,7 @@ def train_mode(args: argparse.Namespace):
         model_path=args.model_path,
         best_param_path=args.best_param_path,
         cls_coef_path=args.cls_coef_path,
-        unsure_ratio=args.unsure_ratio,
+        unsure_ratio=args.unsure_coef,
     )
     lower_bounds = classifier.train(k_fold=args.k_fold)
     print(lower_bounds)
