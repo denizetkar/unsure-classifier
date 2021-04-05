@@ -4,11 +4,6 @@ from scipy.integrate import solve_ivp
 
 
 class UnsureSimulator:
-    EPS = 1e-5
-    I2P_COEF = 1e-1
-    WALL_COEF = 1e-4
-    FRIC_COEF = 0.5
-
     def __init__(self, dataset: np.ndarray, cls_coefs: np.ndarray, unsure_ratio: float):
         sure_particles: np.ndarray = dataset[:, :-1]
         self.a, self.d = sure_particles.shape
@@ -16,8 +11,8 @@ class UnsureSimulator:
         sure_states: np.ndarray = np.stack([sure_particles, sure_vel], axis=1)
 
         self.mins, self.maxs = (
-            np.min(sure_particles, axis=0),
-            np.max(sure_particles, axis=0),
+            np.expand_dims(np.min(sure_particles, axis=0), axis=0),
+            np.expand_dims(np.max(sure_particles, axis=0), axis=0),
         )
         del sure_particles, sure_vel
 
@@ -46,44 +41,41 @@ class UnsureSimulator:
         self.sample_coefs[: self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
         self.sample_coefs[self.a :] = 1
 
-    def state_derivative(self, t: float, y: np.ndarray) -> np.ndarray:
+    def state_derivative(
+        self,
+        t: float,
+        y: np.ndarray,
+        EPS: float = 1e-5,
+        WALL_COEF: float = 1e-4,
+        FRIC_COEF: float = 0.5,
+    ) -> np.ndarray:
         state = y.reshape(self.a + self.b, 2, self.d)
-        prev_pos: np.ndarray = state[:, 0, :].reshape(self.a + self.b, self.d)
+        prev_pos: np.ndarray = state[:, 0, :]
 
-        all_pos = np.broadcast_to(prev_pos, (self.b, self.a + self.b, self.d))
-        unsure_pos = np.broadcast_to(
-            prev_pos[self.a :].reshape(self.b, 1, self.d), (self.b, *prev_pos.shape)
-        )
+        # all_pos: (1, A+B, D)
+        all_pos = np.expand_dims(prev_pos, axis=0)
+        # unsure_pos: (B, 1, D)
+        unsure_pos = np.expand_dims(prev_pos[self.a :], axis=1)
+        # all_to_unsure: (B, A+B, D)
         all_to_unsure = unsure_pos - all_pos
-        # dist: (b, a+b)
-        dist: np.ndarray = np.linalg.norm(all_to_unsure, axis=2) + UnsureSimulator.EPS
+        dist: np.ndarray = np.sqrt(np.sum(all_to_unsure ** 2, axis=2)) + EPS
         all_to_unsure /= np.expand_dims(dist, axis=2)
-        force_mag = (1 / dist ** 2) * np.broadcast_to(
-            self.sample_coefs.reshape(1, -1), (self.b, self.a + self.b)
-        )
-        all_to_unsure *= (
-            np.broadcast_to(
-                np.expand_dims(force_mag, axis=2), (*force_mag.shape, self.d)
-            )
-            * np.broadcast_to(self.maxs - self.mins, (*force_mag.shape, self.d))
-            / np.sum(self.sample_coefs)
-        )
-        # all_to_unsure: (b, d)
+        force_mag = (1 / dist ** 2) * np.expand_dims(self.sample_coefs, axis=0)
+        all_to_unsure *= np.expand_dims(force_mag, axis=2)
+        all_to_unsure *= np.expand_dims(self.maxs - self.mins, axis=0)
+        all_to_unsure /= np.sum(self.sample_coefs)
         all_to_unsure = np.nansum(all_to_unsure, axis=1)
 
-        unsure_pos = prev_pos[self.a :].clip(self.mins, self.maxs)
-        # dist: (b, d)
-        dist = unsure_pos - self.mins + UnsureSimulator.EPS
+        unsure_pos = np.minimum(np.maximum(prev_pos[self.a :], self.mins), self.maxs)
+        dist = unsure_pos - self.mins + EPS
         wall_to_unsure = np.ones_like(dist)
-        up_force_mag = (1 / dist ** 2) * UnsureSimulator.WALL_COEF
-        dist = self.maxs - unsure_pos + UnsureSimulator.EPS
-        down_force_mag = (1 / dist ** 2) * UnsureSimulator.WALL_COEF
-        wall_to_unsure *= (up_force_mag - down_force_mag) * np.broadcast_to(
-            self.maxs - self.mins, (self.b, self.d)
-        )
+        up_force_mag = (1 / dist ** 2) * WALL_COEF
+        dist = self.maxs - unsure_pos + EPS
+        down_force_mag = (1 / dist ** 2) * WALL_COEF
+        wall_to_unsure *= (up_force_mag - down_force_mag) * (self.maxs - self.mins)
 
         unsure_vel = state[self.a :, 1, :]
-        friction = -UnsureSimulator.FRIC_COEF * unsure_vel
+        friction = -FRIC_COEF * unsure_vel
 
         delta: np.ndarray = np.empty_like(state)
         delta[:, 0, :] = state[:, 1, :]

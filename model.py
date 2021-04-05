@@ -84,7 +84,7 @@ class UnsureClassifier:
         self, y_hat: Union[list, np.ndarray], data: lgb.Dataset
     ) -> Tuple[str, float, bool]:
         y_true = data.get_label()
-        y_hat = np.argmax(y_hat, axis=1)
+        y_hat = np.argmax(y_hat.reshape(self.class_cnt + 1, -1), axis=0)
         score = np.dot(
             [
                 fbeta_score(y_true, y_hat, labels=[i], beta=0.5, average="weighted")
