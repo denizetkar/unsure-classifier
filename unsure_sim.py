@@ -31,7 +31,7 @@ class UnsureSimulator:
         dataset: np.ndarray,
         cls_coefs: np.ndarray,
         unsure_ratio: float,
-        bounds: Tuple[float, float] = (-10, 10),
+        bounds: Tuple[float, float] = (-10.0, 10.0),
     ):
         sure_particles: np.ndarray = dataset[:, :-1].copy()
         self.a, self.d = sure_particles.shape
@@ -70,6 +70,9 @@ class UnsureSimulator:
         self.sample_coefs: np.ndarray = np.empty((1, self.a + self.b))
         self.sample_coefs[0, : self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
         self.sample_coefs[0, self.a :] = 1
+        self.sample_coefs_sum = np.sum(self.sample_coefs)
+        self.b_diag_indices = np.diag_indices(self.b, ndim=2)
+        self.empty_like_state = np.empty_like(self.state)
 
     def state_derivative(
         self,
@@ -93,8 +96,8 @@ class UnsureSimulator:
         all_to_unsure /= np.expand_dims(dist, axis=2)
         force_mag = (1 / dist ** 2) * self.sample_coefs * I2P_COEF
         all_to_unsure *= np.expand_dims(force_mag, axis=2)
-        all_to_unsure /= np.sum(self.sample_coefs)
-        all_to_unsure[:, self.a :][np.diag_indices(self.b, ndim=2)] = 0
+        all_to_unsure /= self.sample_coefs_sum
+        all_to_unsure[:, self.a :][self.b_diag_indices] = 0
         all_to_unsure = np.sum(all_to_unsure, axis=1)
 
         unsure_pos = np.minimum(
@@ -110,7 +113,7 @@ class UnsureSimulator:
         unsure_vel = state[self.a :, 1, :]
         friction = -FRIC_COEF * unsure_vel
 
-        delta: np.ndarray = np.empty_like(state)
+        delta: np.ndarray = self.empty_like_state
         delta[:, 0, :] = state[:, 1, :]
         delta[: self.a, 1, :] = 0
         delta[self.a :, 1, :] = all_to_unsure + wall_to_unsure + friction
