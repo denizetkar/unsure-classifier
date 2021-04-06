@@ -21,7 +21,7 @@ def train_mode(args: argparse.Namespace):
         model_path=args.model_path,
         best_param_path=args.best_param_path,
         cls_coef_path=args.cls_coef_path,
-        unsure_ratio=args.unsure_coef,
+        unsure_ratio=args.unsure_ratio,
     )
     lower_bounds = classifier.train(k_fold=args.k_fold)
     print(lower_bounds)
@@ -76,9 +76,9 @@ train_parser.add_argument(
 train_parser.add_argument("--model-path", help="Path for the trained model")
 train_parser.add_argument("--best-param-path", help="Path for the training parameters")
 train_parser.add_argument(
-    "--unsure-coef",
+    "--unsure-ratio",
     type=float,
-    help="Weighting coefficient for minimizing unsure classification",
+    help="Ratio of unsure samples to the number of real (sure) samples",
 )
 train_parser.add_argument(
     "--k-fold",
