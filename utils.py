@@ -94,7 +94,7 @@ def get_dataset(
         unsure_dataset = calc_unsure_dataset(dataset, cls_coefs, unsure_ratio)
         np.savetxt(unsures_path, unsure_dataset, delimiter=",")
     class_cnt = cls_coefs.size
-    unsure_labels = np.full((unsure_dataset.shape[0], 1), class_cnt - 1)
+    unsure_labels = np.full((unsure_dataset.shape[0], 1), class_cnt)
     dataset = np.block([[dataset], [unsure_dataset, unsure_labels]])
 
     return dataset[:, :-1], dataset[:, -1]
