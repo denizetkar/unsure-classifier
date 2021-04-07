@@ -3,6 +3,8 @@ import torch
 from SALib.sample import sobol_sequence as sob_seq
 from scipy.integrate import solve_ivp
 
+# import matplotlib.pyplot as pl
+
 
 def normalize_dataset(
     m: torch.Tensor, mins: torch.Tensor, maxs: torch.Tensor, bounds: Tuple[float, float]
@@ -82,6 +84,21 @@ class UnsureSimulator:
         self.sample_coefs_sum = self.sample_coefs.sum()
         self.empty_like_state = torch.empty_like(self.state)
 
+        # self.fig, ax = pl.subplots()
+        # classes = np.concatenate([dataset[:, -1], np.full(self.b, cls_coefs.size)])
+        # self.scatter = ax.scatter(
+        #     self.state[:, 0, 0], self.state[:, 0, 1], c=classes, s=6, alpha=0.6
+        # )
+        # leg1 = ax.legend(
+        #     *self.scatter.legend_elements(),
+        #     loc="upper right",
+        #     title="Classes",
+        #     framealpha=0.5
+        # )
+        # ax.add_artist(leg1)
+        # pl.ion()
+        # self.last_t = 0.0
+
     def state_derivative(
         self,
         t: float,
@@ -93,6 +110,12 @@ class UnsureSimulator:
     ) -> np.ndarray:
         state = torch.from_numpy(y).reshape(self.a + self.b, 2, self.d)
         prev_pos = state[:, 0, :]
+
+        # if t > self.last_t:
+        #     self.scatter.set_offsets(prev_pos.numpy())
+        #     self.fig.canvas.draw()
+        #     pl.pause(0.001)
+        #     self.last_t = t
 
         # all_pos: (1, A+B, D)
         all_pos = prev_pos[:].unsqueeze_(dim=0)
@@ -126,6 +149,7 @@ class UnsureSimulator:
         return delta.reshape(-1).numpy()
 
     def simulate(self) -> np.ndarray:
+        # pl.show()
         sol = solve_ivp(
             self.state_derivative,
             [0, 10],
@@ -133,6 +157,7 @@ class UnsureSimulator:
             method="RK23",
         )
         last_state: np.ndarray = sol.y[:, -1].reshape(self.a + self.b, 2, self.d)
+        # pl.close("all")
         return denormalize_dataset(
             last_state[self.a :, 0, :].reshape(self.b, self.d),
             self.mins.numpy(),
