@@ -1,6 +1,83 @@
 import numpy as np
+from numba import jit
 from SALib.sample import sobol_sequence
 from scipy.integrate import solve_ivp
+
+
+def normalize_dataset(
+    m: np.ndarray, mins: np.ndarray, maxs: np.ndarray, bounds: Tuple[float, float]
+) -> np.ndarray:
+    x = maxs - mins
+    y = bounds[1] - bounds[0]
+    m -= mins - bounds[0] * x / y
+    m *= y / x
+    return m
+
+
+def denormalize_dataset(
+    m: np.ndarray, mins: np.ndarray, maxs: np.ndarray, bounds: Tuple[float, float]
+) -> np.ndarray:
+    x = bounds[1] - bounds[0]
+    y = maxs - mins
+    m -= bounds[0] - mins * x / y
+    m *= y / x
+    return m
+
+
+@jit(nopython=True, error_model="numpy")
+def state_derivative(
+    t: float,
+    y: np.ndarray,
+    A: int,
+    B: int,
+    D: int,
+    sample_coefs: np.ndarray,
+    sample_coefs_sum: float,
+    bounds: Tuple[float, float],
+    empty_like_state: np.ndarray,
+    EPS: float = 1e-7,
+    I2P_COEF: float = 1e0,
+    WALL_COEF: float = 1e-1,
+    FRIC_COEF: float = 1.0,
+) -> np.ndarray:
+    state = y.reshape(A + B, 2, D)
+    prev_pos: np.ndarray = state[:, 0, :]
+
+    # all_pos: (1, A+B, D)
+    all_pos = np.expand_dims(prev_pos, axis=0)
+    # unsure_pos: (B, 1, D)
+    unsure_pos = np.expand_dims(prev_pos[A:], axis=1)
+    # all_to_unsure: (B, A+B, D)
+    all_to_unsure = unsure_pos - all_pos
+    # dist: (B, A+B)
+    dist: np.ndarray = np.sqrt(np.sum(all_to_unsure ** 2, axis=2)) + EPS
+    all_to_unsure /= np.expand_dims(dist, axis=2)
+    # force_mag: (B, A+B)
+    force_mag = (1 / dist ** 2) * sample_coefs * I2P_COEF
+    all_to_unsure *= np.expand_dims(force_mag, axis=2)
+    all_to_unsure /= sample_coefs_sum
+    for i in range(B):
+        all_to_unsure[i, A + i] = 0
+    # all_to_unsure: (B, D)
+    all_to_unsure = np.sum(all_to_unsure, axis=1)
+
+    unsure_pos = prev_pos[A:]
+    # dist: (B, D)
+    dist = unsure_pos - bounds[0]
+    wall_to_unsure = np.ones_like(dist)
+    up_force_mag = np.exp(-dist / WALL_COEF)
+    dist = bounds[1] - unsure_pos
+    down_force_mag = np.exp(-dist / WALL_COEF)
+    wall_to_unsure *= up_force_mag - down_force_mag
+
+    unsure_vel = state[A:, 1, :]
+    friction = -FRIC_COEF * unsure_vel
+
+    delta: np.ndarray = empty_like_state
+    delta[:, 0, :] = state[:, 1, :]
+    delta[:A, 1, :] = 0
+    delta[A:, 1, :] = all_to_unsure + wall_to_unsure + friction
+    return delta.reshape(-1)
 
 
 class UnsureSimulator:
@@ -45,52 +122,21 @@ class UnsureSimulator:
         self.sample_coefs[: self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
         self.sample_coefs[self.a :] = 1
 
-    def state_derivative(
-        self,
-        t: float,
-        y: np.ndarray,
-        EPS: float = 1e-7,
-        I2P_COEF: float = 1e0,
-        WALL_COEF: float = 1e-1,
-        FRIC_COEF: float = 1.0,
-    ) -> np.ndarray:
-        state = y.reshape(self.a + self.b, 2, self.d)
-        prev_pos: np.ndarray = state[:, 0, :]
-
-        # all_pos: (1, A+B, D)
-        all_pos = np.expand_dims(prev_pos, axis=0)
-        # unsure_pos: (B, 1, D)
-        unsure_pos = np.expand_dims(prev_pos[self.a :], axis=1)
-        # all_to_unsure: (B, A+B, D)
-        all_to_unsure = unsure_pos - all_pos
-        dist: np.ndarray = np.sqrt(np.sum(all_to_unsure ** 2, axis=2)) + EPS
-        all_to_unsure /= np.expand_dims(dist, axis=2)
-        force_mag = (1 / dist ** 2) * np.expand_dims(self.sample_coefs, axis=0)
-        all_to_unsure *= np.expand_dims(force_mag, axis=2)
-        all_to_unsure *= np.expand_dims(self.maxs - self.mins, axis=0)
-        all_to_unsure /= np.sum(self.sample_coefs)
-        all_to_unsure = np.nansum(all_to_unsure, axis=1)
-
-        unsure_pos = prev_pos[self.a :]
-        dist = unsure_pos - self.bounds[0]
-        wall_to_unsure = np.ones_like(dist)
-        up_force_mag = np.exp(-dist / WALL_COEF)
-        dist = self.bounds[1] - unsure_pos
-        down_force_mag = np.exp(-dist / WALL_COEF)
-        wall_to_unsure *= up_force_mag - down_force_mag
-
-        unsure_vel = state[self.a :, 1, :]
-        friction = -FRIC_COEF * unsure_vel
-
-        delta: np.ndarray = np.empty_like(state)
-        delta[:, 0, :] = state[:, 1, :]
-        delta[: self.a, 1, :] = 0
-        delta[self.a :, 1, :] = all_to_unsure + wall_to_unsure + friction
-        return delta.reshape(-1)
-
     def simulate(self) -> np.ndarray:
         sol = solve_ivp(
-            self.state_derivative, [0, 10], self.state.reshape(-1), method="RK23"
+            state_derivative,
+            [0, 10],
+            self.state.reshape(-1),
+            method="RK23",
+            args=(
+                self.a,
+                self.b,
+                self.d,
+                self.sample_coefs,
+                self.sample_coefs_sum,
+                self.bounds,
+                self.empty_like_state,
+            ),
         )
         last_state: np.ndarray = sol.y[:, -1].reshape(self.a + self.b, 2, self.d)
         return last_state[self.a :, 0, :].reshape(self.b, self.d)
