@@ -1,10 +1,13 @@
 import os
-from typing import Tuple, Union
+from typing import Tuple
 
-import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, precision_score
+from scipy.stats import kurtosis
+from sklearn.metrics import confusion_matrix
+from statsmodels.stats.proportion import proportion_confint
+
+np.seterr(divide="ignore", invalid="ignore")
 
 
 def assert_file_path(file_path: str):
@@ -65,7 +68,7 @@ def get_dataset(
       (X, y) numpy arrays where "X" excludes the last column and "y" is the last column.
     """
     dataset = get_excel_table(dataset_path, col_labelled, row_labelled)
-    return dataset[:, :-1], dataset[:, -1]
+    return dataset[:, :-1], dataset[:, -1].astype(int)
 
 
 def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:
@@ -116,14 +119,16 @@ def get_miscls_cost(
         ),
         target_one_hot.reshape(sample_size, class_cnt, 1),
     )
-    # np.broadcast_to(miscls_weights, (data_size, *miscls_weights.shape))
     return np.sum(miscls_cost)
 
 
-def eval_scores(
-    target: np.ndarray, pred: np.ndarray, unsure_cnt: int
-) -> Tuple[float, float, float]:
-    """Calculates various evaluation scores from the target labels and
+def eval_score_counts(
+    target: np.ndarray,
+    pred: np.ndarray,
+    unsure_cnt: int,
+    class_cnt: int,
+) -> np.ndarray:
+    """Calculates various evaluation score counts from the target labels and
     predicted labels. The last score is always sureness ratio.
 
     Args:
@@ -131,29 +136,75 @@ def eval_scores(
       pred: A numpy array of shape (n,) for predicted labels. It contains
         "-1" for unsure label.
       unsure_cnt: Number of unsure samples in the prediction.
+      class_cnt: Number of classes excluding the unsure class.
 
     Returns:
-      A tuple of floats each containing an evaluation score.
+      A numpy array of shape (d, 2) where 'd' is the number of different
+      evaluation scores and the last dimension is for a pair of integers
+      (s, n) where 's' is the number of relevant samples and 'n' is the
+      total number of samples. So, the corresponding evaluation score is
+      's/n'.
     """
     conf_preds = pred != -1
-    return (
-        accuracy_score(target[conf_preds], pred[conf_preds]),
-        precision_score(target[conf_preds], pred[conf_preds]),
-        1.0 - unsure_cnt / pred.size,
+    conf_matrix: np.ndarray = confusion_matrix(
+        target[conf_preds], pred[conf_preds], labels=[i for i in range(class_cnt)]
+    )
+    return np.array(
+        (
+            (int(conf_matrix.diagonal().sum()), int(conf_matrix.sum())),
+            *(
+                (int(conf_matrix[i, i]), int(conf_matrix[:, i].sum()))
+                for i in range(class_cnt)
+            ),
+            (int(pred.size) - unsure_cnt, int(pred.size)),
+        )
     )
 
 
-def lgb_f1_score(
-    y_hat: Union[list, np.ndarray], data: lgb.Dataset
-) -> Tuple[str, float, bool]:
-    y_true = data.get_label()
-    y_hat = np.rint(y_hat)  # scikits f1 doesn't like probabilities
-    return "f1", f1_score(y_true, y_hat), True
+def get_lower_bounds_1(cv_score_counts: np.ndarray) -> np.ndarray:
+    """Calculates a 99% confidence lower bound for the cross validation
+    scores from mean and standard deviation. Uses Chebyshev's inequality.
+    https://www.wikiwand.com/en/Chebyshev%27s_inequality
+
+    Args:
+      cv_score_counts: A numpy array of shape (k, d, 2) where 'k' is the
+      number of CV folds, 'd' is the number of different evaluation scores
+      and the last dimension is for a pair of integers as returned by the
+      "eval_score_counts()" method.
+
+    Returns:
+      A numpy array of shape (d,) with lower bound estimates of each score.
+    """
+    cv_scores = cv_score_counts[:, :, 0] / cv_score_counts[:, :, 1]
+    mean = np.nanmean(cv_scores, axis=0)
+    ex_kur = np.array(kurtosis(cv_scores, bias=False, axis=0, nan_policy="omit"))
+    valid_scores = np.logical_not(np.isnan(cv_scores))
+    # https://www.wikiwand.com/en/Unbiased_estimation_of_standard_deviation#/Other_distributions
+    std = np.sqrt(
+        np.nansum((cv_scores - mean) ** 2, axis=0)
+        / (np.sum(valid_scores, axis=0) - 1.5 - ex_kur / 4)
+    )
+    return mean - 5 * std
 
 
-def lgb_acc_score(
-    y_hat: Union[list, np.ndarray], data: lgb.Dataset
-) -> Tuple[str, float, bool]:
-    y_true = data.get_label()
-    y_hat = np.rint(y_hat)  # scikits acc doesn't like probabilities
-    return "acc", accuracy_score(y_true, y_hat), True
+def get_lower_bounds_2(cv_score_counts: np.ndarray) -> np.ndarray:
+    """Calculates a 99% confidence lower bound for the cross validation
+    scores from Binomial proportion confidence interval.
+    https://www.wikiwand.com/en/Binomial_proportion_confidence_interval#/Clopper%E2%80%93Pearson_interval
+
+    Args:
+      cv_score_counts: A numpy array of shape (k, d, 2) where 'k' is the
+      number of CV folds, 'd' is the number of different evaluation scores
+      and the last dimension is for a pair of integers as returned by the
+      "eval_score_counts()" method.
+
+    Returns:
+      A numpy array of shape (d,) with lower bound estimates of each score.
+    """
+    cv_score_counts = np.sum(cv_score_counts, axis=0)
+
+    # https://www.statsmodels.org/stable/generated/statsmodels.stats.proportion.proportion_confint.html
+    lb, _ = proportion_confint(
+        cv_score_counts[:, 0], cv_score_counts[:, 1], alpha=0.02, method="beta"
+    )
+    return lb

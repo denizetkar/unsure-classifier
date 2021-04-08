@@ -35,8 +35,11 @@ def eval_mode(args: argparse.Namespace):
     """
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
+    assert args.class_cnt > 1, "class count is not bigger than 1"
     classifier = model.UnsureClassifier(
-        dataset_path=args.dataset_path, model_path=args.model_path
+        dataset_path=args.dataset_path,
+        model_path=args.model_path,
+        class_cnt=args.class_cnt,
     )
     eval_scores = classifier.evaluate()
     print(eval_scores)
@@ -50,8 +53,11 @@ def pred_mode(args: argparse.Namespace):
     """
     utils.assert_file_path(args.dataset_path)
     utils.assert_file_path(args.model_path)
+    assert args.class_cnt > 1, "class count is not bigger than 1"
     classifier = model.UnsureClassifier(
-        dataset_path=args.dataset_path, model_path=args.model_path
+        dataset_path=args.dataset_path,
+        model_path=args.model_path,
+        class_cnt=args.class_cnt,
     )
     pred, unsure_cnt = classifier.predict()
     print((pred, unsure_cnt))
@@ -86,11 +92,13 @@ train_parser.set_defaults(func=train_mode)
 eval_parser = subparser.add_parser("eval")
 eval_parser.add_argument("dataset_path", help="Path to the dataset for evaluation")
 eval_parser.add_argument("model_path", help="Path for loading the model")
+eval_parser.add_argument("class_cnt", type=int, help="Number of classes")
 eval_parser.set_defaults(func=eval_mode)
 
 pred_parser = subparser.add_parser("pred")
 pred_parser.add_argument("dataset_path", help="Path to the dataset for prediction")
 pred_parser.add_argument("model_path", help="Path for loading the model")
+pred_parser.add_argument("class_cnt", type=int, help="Number of classes")
 pred_parser.set_defaults(func=pred_mode)
 
 

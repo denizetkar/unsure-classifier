@@ -8,9 +8,9 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "main.py",
             "console": "integratedTerminal",
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "args": [
                 "train",
                 "../datasets/trainingdata_a.xls",
