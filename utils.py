@@ -129,8 +129,7 @@ def eval_score_counts(
 
     Args:
       target: A numpy array of shape (n,) for target labels.
-      pred: A numpy array of shape (n,) for predicted labels. It contains
-        "-1" for unsure label.
+      pred: A numpy array of shape (n,) for predicted labels.
       unsure_cnt: Number of unsure samples in the prediction.
       class_cnt: Number of classes excluding the unsure class.
 
