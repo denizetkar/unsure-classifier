@@ -49,7 +49,10 @@ class UnsureSimulator:
             sobol_sequence.sample(int(self.a * unsure_ratio), self.d),
             np.array(0.0),
             np.array(1.0),
-            bounds,
+            (
+                bounds[0] + (bounds[1] - bounds[0]) / 1000,
+                bounds[1] - (bounds[1] - bounds[0]) / 1000,
+            ),
         )
         self.b = unsure_particles.shape[0]
         vel_mean = (bounds[1] - bounds[0]) / 4
@@ -79,9 +82,9 @@ class UnsureSimulator:
         t: float,
         y: np.ndarray,
         EPS: float = 1e-7,
-        I2P_COEF: float = 1e-1,
-        WALL_COEF: float = 1e-6,
-        FRIC_COEF: float = 0.5,
+        I2P_COEF: float = 1e0,
+        WALL_COEF: float = 1e-1,
+        FRIC_COEF: float = 1.0,
     ) -> np.ndarray:
         state = y.reshape(self.a + self.b, 2, self.d)
         prev_pos: np.ndarray = state[:, 0, :]
@@ -100,14 +103,12 @@ class UnsureSimulator:
         all_to_unsure[:, self.a :][self.b_diag_indices] = 0
         all_to_unsure = np.sum(all_to_unsure, axis=1)
 
-        unsure_pos = np.minimum(
-            np.maximum(prev_pos[self.a :], self.bounds[0]), self.bounds[1]
-        )
-        dist = unsure_pos - self.bounds[0] + EPS
+        unsure_pos = prev_pos[self.a :]
+        dist = unsure_pos - self.bounds[0]
         wall_to_unsure = np.ones_like(dist)
-        up_force_mag = (1 / dist ** 2) * WALL_COEF
-        dist = self.bounds[1] - unsure_pos + EPS
-        down_force_mag = (1 / dist ** 2) * WALL_COEF
+        up_force_mag = np.exp(-dist / WALL_COEF)
+        dist = self.bounds[1] - unsure_pos
+        down_force_mag = np.exp(-dist / WALL_COEF)
         wall_to_unsure *= up_force_mag - down_force_mag
 
         unsure_vel = state[self.a :, 1, :]
@@ -120,7 +121,9 @@ class UnsureSimulator:
         return delta.reshape(-1)
 
     def simulate(self) -> np.ndarray:
-        sol = solve_ivp(self.state_derivative, [0, 10], self.state.reshape(-1))
+        sol = solve_ivp(
+            self.state_derivative, [0, 10], self.state.reshape(-1), method="RK23"
+        )
         last_state: np.ndarray = sol.y[:, -1].reshape(self.a + self.b, 2, self.d)
         return denormalize_dataset(
             last_state[self.a :, 0, :].reshape(self.b, self.d),
