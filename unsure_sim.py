@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import numpy as np
 import torch
 from SALib.sample import sobol_sequence as sob_seq
@@ -36,9 +38,6 @@ class UnsureSimulator:
     ):
         sure_particles = torch.from_numpy(dataset[:, :-1]).clone()
         self.a, self.d = sure_particles.shape
-        sure_vel: np.ndarray = np.zeros_like(sure_particles)
-        sure_states: np.ndarray = np.stack([sure_particles, sure_vel], axis=1)
-
         self.mins, self.maxs = (
             sure_particles.min(dim=0).values.unsqueeze_(dim=0),
             sure_particles.max(dim=0).values.unsqueeze_(dim=0),
