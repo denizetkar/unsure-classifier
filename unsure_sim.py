@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import numpy as np
 from numba import jit
 from SALib.sample import sobol_sequence
@@ -81,16 +83,23 @@ def state_derivative(
 
 
 class UnsureSimulator:
-    def __init__(self, dataset: np.ndarray, cls_coefs: np.ndarray, unsure_ratio: float):
-        sure_particles: np.ndarray = dataset[:, :-1]
+    def __init__(
+        self,
+        dataset: np.ndarray,
+        cls_coefs: np.ndarray,
+        unsure_ratio: float,
+        bounds: Tuple[float, float] = (-10.0, 10.0),
+    ):
+        sure_particles: np.ndarray = dataset[:, :-1].copy()
         self.a, self.d = sure_particles.shape
-        sure_vel: np.ndarray = np.zeros_like(sure_particles)
-        sure_states: np.ndarray = np.stack([sure_particles, sure_vel], axis=1)
-
         self.mins, self.maxs = (
             np.expand_dims(np.min(sure_particles, axis=0), axis=0),
             np.expand_dims(np.max(sure_particles, axis=0), axis=0),
         )
+        self.bounds = bounds
+        sure_particles = normalize_dataset(sure_particles, self.mins, self.maxs, bounds)
+        sure_vel: np.ndarray = np.zeros_like(sure_particles)
+        sure_states: np.ndarray = np.stack([sure_particles, sure_vel], axis=1)
         del sure_particles, sure_vel
 
         unsure_particles: np.ndarray = normalize_dataset(
@@ -103,8 +112,8 @@ class UnsureSimulator:
             ),
         )
         self.b = unsure_particles.shape[0]
-        vel_mean = (self.maxs - self.mins) / 4
-        vel_std = (self.maxs - self.mins) / 16
+        vel_mean = (bounds[1] - bounds[0]) / 4
+        vel_std = (bounds[1] - bounds[0]) / 16
         unsure_vel: np.ndarray = (
             np.random.randn(*unsure_particles.shape) * vel_std + vel_mean
         ) * np.random.choice([-1, 1], size=(*unsure_particles.shape,))
@@ -118,9 +127,12 @@ class UnsureSimulator:
         del unsure_particles, unsure_vel
 
         self.state: np.ndarray = np.concatenate((sure_states, unsure_state), axis=0)
-        self.sample_coefs: np.ndarray = np.empty(self.a + self.b)
-        self.sample_coefs[: self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
-        self.sample_coefs[self.a :] = 1
+        self.sample_coefs: np.ndarray = np.empty((1, self.a + self.b))
+        self.sample_coefs[0, : self.a] = 1 / cls_coefs[dataset[:, -1].astype(int)]
+        self.sample_coefs[0, self.a :] = 1
+        self.sample_coefs_sum = np.sum(self.sample_coefs)
+        self.b_diag_indices = np.diag_indices(self.b, ndim=2)
+        self.empty_like_state = np.empty_like(self.state)
 
     def simulate(self) -> np.ndarray:
         sol = solve_ivp(
@@ -139,4 +151,9 @@ class UnsureSimulator:
             ),
         )
         last_state: np.ndarray = sol.y[:, -1].reshape(self.a + self.b, 2, self.d)
-        return last_state[self.a :, 0, :].reshape(self.b, self.d)
+        return denormalize_dataset(
+            last_state[self.a :, 0, :].reshape(self.b, self.d),
+            self.mins,
+            self.maxs,
+            self.bounds,
+        )
