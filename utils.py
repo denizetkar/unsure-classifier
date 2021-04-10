@@ -111,7 +111,7 @@ def get_cls_coefs(cls_coef_path: str) -> np.ndarray:
       cls_coef_path: Path of the class coefficients.
 
     Returns:
-      A numpy array of shape (n,) where "n" is the number of classes.
+      A numpy array of shape (c,) where "c" is the number of classes.
     """
     cls_coefs: np.ndarray = pd.read_csv(cls_coef_path, header=None).to_numpy()
     assert np.all(cls_coefs > 0), "class coefficient vector must be positive"

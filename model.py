@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import lightgbm as lgb
 import numpy as np
@@ -130,7 +130,9 @@ class UnsureClassifier:
 
         return best_params
 
-    def _train_with_hyperparams(self, best_params: Dict[str, Any], k_fold: int):
+    def _train_with_hyperparams(
+        self, best_params: Dict[str, Any], k_fold: int
+    ) -> List[np.ndarray]:
         data, target = utils.get_dataset(
             self.dataset_path,
             load_unsures=True,
@@ -210,7 +212,7 @@ class UnsureClassifier:
 
     def predict(
         self, dataset_path: str = None, model_path: str = None
-    ) -> Tuple[np.ndarray, float]:
+    ) -> Tuple[np.ndarray, int]:
         self._load_args(dataset_path=dataset_path, model_path=model_path)
         if self.model is None:
             self.model = lgb.Booster(model_file=self.model_path, silent=True)
