@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import lightgbm as lgb
 import numpy as np
@@ -38,7 +38,7 @@ class UnsureClassifier:
             Must be >= 0!
         model:
             (p, t) where "p" if a LightGBM booster and "t" is a numpy array with
-            shape (n,) containing classification confidence thresholds for n classes.
+            shape (c,) containing classification confidence thresholds for "c" classes.
     """
 
     def __init__(
@@ -174,7 +174,9 @@ class UnsureClassifier:
             [study.best_params[f"thresh{i}"] for i in range(self.class_cnt)]
         )
 
-    def _train_with_hyperparams(self, best_params: Dict[str, Any], k_fold: int):
+    def _train_with_hyperparams(
+        self, best_params: Dict[str, Any], k_fold: int
+    ) -> List[np.ndarray]:
         data, target = utils.get_dataset(self.dataset_path)
         skf = StratifiedKFold(n_splits=k_fold, shuffle=True)
         cv_scores = []
@@ -250,7 +252,7 @@ class UnsureClassifier:
 
     def predict(
         self, dataset_path: str = None, model_path: str = None
-    ) -> Tuple[np.ndarray, float]:
+    ) -> Tuple[np.ndarray, int]:
         self._load_args(dataset_path=dataset_path, model_path=model_path)
         if self.predictor is None or self.thresholds is None:
             with open(self.model_path, "rb") as f:

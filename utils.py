@@ -78,13 +78,18 @@ def get_miscls_weights(miscls_weight_path: str) -> np.ndarray:
       miscls_weight_path: Path of the misclassification weights.
 
     Returns:
-      A numpy array of shape (n, n) where "n" is the number of classes.
+      A numpy array of shape (c, c) where "c" is the number of classes.
     """
     miscls_weights: np.ndarray = pd.read_csv(miscls_weight_path, header=None).to_numpy()
     assert np.all(
         miscls_weights.diagonal() == 0
     ), "misclassification weight matrix must be diagonally 0"
-    assert np.all(miscls_weights >= 0), "misclassification matrix must be non-negative"
+    assert np.all(
+        miscls_weights >= 0
+    ), "misclassification weight matrix must be non-negative"
+    assert (
+        miscls_weights.shape[0] == miscls_weights.shape[1]
+    ), "misclassification weight matrix must be square"
     return miscls_weights
 
 
