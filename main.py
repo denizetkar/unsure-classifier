@@ -63,45 +63,42 @@ def pred_mode(args: argparse.Namespace):
     print((pred, unsure_cnt))
 
 
-parser = argparse.ArgumentParser()
-subparser = parser.add_subparsers()
-train_parser = subparser.add_parser("train")
-train_parser.add_argument(
-    "dataset_path",
-    help="Path to the dataset for training",
-)
-train_parser.add_argument(
-    "miscls_weight_path", help="Path for misclassification weights"
-)
-train_parser.add_argument("--model-path", help="Path for the trained model")
-train_parser.add_argument("--best-param-path", help="Path for the training parameters")
-train_parser.add_argument(
-    "--unsure-coef",
-    type=float,
-    help="Weighting coefficient for minimizing unsure classification",
-)
-train_parser.add_argument(
-    "--k-fold",
-    "-k",
-    type=int,
-    help="Number of folds to use for Cross Validation",
-    default=20,
-)
-train_parser.set_defaults(func=train_mode)
-
-eval_parser = subparser.add_parser("eval")
-eval_parser.add_argument("dataset_path", help="Path to the dataset for evaluation")
-eval_parser.add_argument("model_path", help="Path for loading the model")
-eval_parser.add_argument("class_cnt", type=int, help="Number of classes")
-eval_parser.set_defaults(func=eval_mode)
-
-pred_parser = subparser.add_parser("pred")
-pred_parser.add_argument("dataset_path", help="Path to the dataset for prediction")
-pred_parser.add_argument("model_path", help="Path for loading the model")
-pred_parser.add_argument("class_cnt", type=int, help="Number of classes")
-pred_parser.set_defaults(func=pred_mode)
-
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    subparser = parser.add_subparsers()
+    train_parser = subparser.add_parser("train")
+    train_parser.add_argument(
+        "dataset_path",
+        help="Path to the dataset for training",
+    )
+    train_parser.add_argument("miscls_weight_path", help="Path for misclassification weights")
+    train_parser.add_argument("--model-path", help="Path for the trained model")
+    train_parser.add_argument("--best-param-path", help="Path for the training parameters")
+    train_parser.add_argument(
+        "--unsure-coef",
+        type=float,
+        help="Weighting coefficient for minimizing unsure classification",
+    )
+    train_parser.add_argument(
+        "--k-fold",
+        "-k",
+        type=int,
+        help="Number of folds to use for Cross Validation",
+        default=20,
+    )
+    train_parser.set_defaults(func=train_mode)
+
+    eval_parser = subparser.add_parser("eval")
+    eval_parser.add_argument("dataset_path", help="Path to the dataset for evaluation")
+    eval_parser.add_argument("model_path", help="Path for loading the model")
+    eval_parser.add_argument("class_cnt", type=int, help="Number of classes")
+    eval_parser.set_defaults(func=eval_mode)
+
+    pred_parser = subparser.add_parser("pred")
+    pred_parser.add_argument("dataset_path", help="Path to the dataset for prediction")
+    pred_parser.add_argument("model_path", help="Path for loading the model")
+    pred_parser.add_argument("class_cnt", type=int, help="Number of classes")
+    pred_parser.set_defaults(func=pred_mode)
+
     args = parser.parse_args()
     args.func(args)
